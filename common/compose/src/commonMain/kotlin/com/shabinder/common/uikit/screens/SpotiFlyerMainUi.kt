@@ -56,6 +56,9 @@ import androidx.compose.material.Text
 import androidx.compose.material.TextField
 import androidx.compose.material.TextFieldDefaults.textFieldColors
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.rounded.CardGiftcard
@@ -65,6 +68,8 @@ import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,6 +108,12 @@ import com.shabinder.common.uikit.configurations.colorPrimary
 import com.shabinder.common.uikit.configurations.transparent
 import com.shabinder.common.uikit.dialogs.DonationDialogComponent
 import com.shabinder.common.uikit.rememberScrollbarAdapter
+import java.io.File
+import android.media.MediaPlayer;
+import androidx.compose.material.IconButton
+import androidx.compose.runtime.DisposableEffect
+import java.io.IOException
+
 
 @Composable
 fun SpotiFlyerMainContent(component: SpotiFlyerMain) {
@@ -139,9 +150,16 @@ fun SpotiFlyerMainContent(component: SpotiFlyerMain) {
                 component::loadImage,
                 component::onLinkSearch
             )
+            HomeCategory.Downloads -> DownloadsColumn(
+                "",
+                component::loadImage,
+                component::onLinkSearch
+            )
         }
     }
 }
+
+
 
 @Composable
 fun HomeTabBar(
@@ -172,6 +190,7 @@ fun HomeTabBar(
                         text = when (category) {
                             HomeCategory.About -> Strings.about()
                             HomeCategory.History -> Strings.history()
+                            HomeCategory.Downloads -> "Downloads"
                         },
                         style = MaterialTheme.typography.body2
                     )
@@ -180,6 +199,7 @@ fun HomeTabBar(
                     when (category) {
                         HomeCategory.About -> Icon(Icons.Outlined.Info, Strings.infoTab())
                         HomeCategory.History -> Icon(Icons.Outlined.History, Strings.historyTab())
+                        HomeCategory.Downloads -> Icon(Icons.Outlined.Download, "Download Tab")
                     }
                 }
             )
@@ -562,4 +582,186 @@ fun HomeCategoryTabIndicator(
             .height(3.dp)
             .background(color, RoundedCornerShape(topStartPercent = 100, topEndPercent = 100))
     )
+}
+
+
+@Composable
+fun DownloadsColumn(
+    downloadPath: String,
+    loadImage: suspend (String) -> com.shabinder.common.core_components.picture.Picture,
+    onItemClicked: (String) -> Unit
+) {
+    val directoryPath = "/storage/emulated/0/Music/SpotiFlyer/" // Replace with your actual directory path
+    val directory = File(directoryPath)
+    val mediaPlayer = remember { MediaPlayer() }
+
+    if (directory.exists() && directory.isDirectory) {
+        val musicFiles = directory.listFiles { file ->
+            file.isFile && file.extension.equals("mp3", ignoreCase = true)
+        }
+
+        val listState = rememberLazyListState()
+        var recordIdCounter : Long = 1 // Initialize the counter with 1
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = {
+                items(musicFiles) { file ->
+                    // Extract metadata from the file. Replace these with your actual logic.
+                    val title = extractTitleFromFileName(file.name) // Extract title from the file name
+
+                    // Create a DownloadRecord for each music file.
+                    val record = DownloadRecord(
+                        id = recordIdCounter, // Replace with an appropriate ID
+                        type = "Audio", // Replace with the appropriate type
+                        name = title, // Use the extracted title
+                        link = file.absolutePath, // Use the file path as the link
+                        coverUrl =  "", // Provide the cover image URL if available
+                        totalFiles = recordIdCounter
+                    )
+                    recordIdCounter++
+
+                    // Create a DownloadItem for each music file.
+                    DownloadItem(
+                        item = record,
+                        loadImage,
+                        onItemClicked,
+                        mediaPlayer
+                    )
+                }
+            },
+            state = listState,
+            modifier = Modifier.padding(top = 8.dp).fillMaxSize()
+        )
+    } else {
+        // Handle the case where the directory doesn't exist or is not a directory.
+        // You can show an error message or take appropriate action.
+    }
+}
+
+
+@Composable
+fun DownloadItem(
+    item: DownloadRecord,
+    loadImage: suspend (String) -> Picture,
+    onItemClicked: (String) -> Unit,
+    mediaPlayer: MediaPlayer // Pass the mediaPlayer as a parameter
+) {
+    val isPlaying = remember { mutableStateOf(false) }
+
+    // Use this to keep track of whether this item is currently playing
+    val isItemPlaying = remember { mutableStateOf(false) }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(end = 8.dp)
+    ) {
+        // Display the cover image
+        ImageLoad(
+            item.coverUrl,
+            { loadImage(item.coverUrl) },
+            Strings.albumArt(),
+            modifier = Modifier
+                .height(70.dp)
+                .width(70.dp)
+                .clip(SpotiFlyerShapes.medium)
+        )
+
+        // Display music details
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 8.dp)
+                .height(60.dp)
+                .weight(1f),
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Text(
+                text = item.name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = SpotiFlyerTypography.h6,
+                color = colorAccent
+            )
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Text(
+                    text = item.type,
+                    fontSize = 13.sp,
+                    color = colorOffWhite
+                )
+                Text(
+                    text = "${Strings.tracks()}: ${item.totalFiles}",
+                    fontSize = 13.sp,
+                    color = colorOffWhite
+                )
+            }
+        }
+
+        // Play/Pause button
+        IconButton(
+            onClick = {
+                if (isPlaying.value) {
+                    // If already playing, stop playback
+                    mediaPlayer.stop()
+                    mediaPlayer.reset()
+                    isPlaying.value = false
+
+                    // Also update the isItemPlaying state for this item
+                    isItemPlaying.value = false
+                } else if (!mediaPlayer.isPlaying) { // Check if mediaPlayer is not already playing
+                    try {
+                        // Start playing when the play button is clicked
+                        mediaPlayer.setDataSource(item.link)
+                        mediaPlayer.prepare()
+                        mediaPlayer.start()
+                        isPlaying.value = true
+
+                        // Set isItemPlaying to true for this item
+                        isItemPlaying.value = true
+                    } catch (e: IOException) {
+                        // Handle any errors that may occur during playback setup
+                    }
+                }
+            }
+        ) {
+            Icon(
+                imageVector = if (isPlaying.value) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (isPlaying.value) "Pause" else "Play"
+            )
+        }
+
+
+
+
+
+
+        // Add logic here to stop playback if another item starts playing
+        if (isItemPlaying.value) {
+            DisposableEffect(Unit) {
+                onDispose {
+                    // Stop playback when this item is disposed (e.g., when switching tabs)
+                    mediaPlayer.stop()
+                    mediaPlayer.reset()
+                    isPlaying.value = false
+                }
+            }
+        }
+    }
+}
+
+
+fun extractTitleFromFileName(fileName: String): String {
+    // Remove the file extension (e.g., ".mp3")
+    val nameWithoutExtension = fileName.substringBeforeLast(".")
+
+    // If your file names have underscores or other separators, you can replace them with spaces
+    val title = nameWithoutExtension.replace("_", " ")
+
+    // Capitalize the first letter of each word (optional)
+    val capitalizedTitle = title.split(" ").joinToString(" ") { it.capitalize() }
+
+    return capitalizedTitle
 }
